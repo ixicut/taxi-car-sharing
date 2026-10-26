@@ -1,0 +1,58 @@
+@startuml 01-context-business
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 60
+skinparam ranksep 70
+
+title RideHub — Business Context Diagram
+
+left to right direction
+
+' ---------- Користувачі ----------
+actor "Пасажир\n(ST-01)" as Passenger
+actor "Користувач\nкаршерингу\n(ST-02)" as Renter
+actor "Водій\n(ST-03)" as Driver
+actor "Диспетчерська\nслужба\n(ST-06)" as Dispatcher
+
+' ---------- Система ----------
+rectangle "**RideHub**\nАгрегатор таксі\nта каршерингу" as RideHub #DDEBF7
+
+' ---------- Партнери ----------
+rectangle "Таксопарк-партнер\n(ST-04)" as Fleet #F2F2F2
+rectangle "Каршеринг-оператор\n(ST-05)" as CarOperator #F2F2F2
+
+' ---------- Зовнішні сервіси ----------
+rectangle "Платіжний провайдер\nLiqPay / WayForPay\n(ST-07)" as PSP #FFF2CC
+rectangle "Картографічний сервіс\nGoogle Maps / Visicom\n(ST-08)" as Maps #FFF2CC
+rectangle "KYC-провайдер\n«Дія»\n(ST-13)" as KYC #FFF2CC
+rectangle "Провайдери сповіщень\nFCM / APNs / SMS\n(ST-14)" as Notify #FFF2CC
+rectangle "ПРРО\n(фіскалізація)" as PRRO #FFF2CC
+rectangle "Державні регулятори\n(ST-12)" as Regulator #FCE4D6
+
+' ---------- Потоки ----------
+Passenger --> RideHub : F-01 замовлення,\nоплата, оцінка
+RideHub --> Passenger : F-02 ціна, статус,\nпозиція авто, чек
+Renter <--> RideHub : F-03 бронювання, відкрити/закрити,\nоплата оренди
+Driver <--> RideHub : F-04 документи, геопозиція,\nприйняття замовлень
+Dispatcher <--> RideHub : F-13 моніторинг, ручне\nпризначення, refund
+
+RideHub <--> Fleet : F-06 реєстр водіїв і авто,\nзвіти, виплати
+RideHub <--> CarOperator : F-07 стан авто, команди\nтелематики, виплати
+RideHub <--> PSP : F-08 hold / capture / refund,\npayout, webhook
+RideHub <--> Maps : F-09 маршрут, ETA,\nгеокодування
+RideHub <--> KYC : F-11 документи водія\n(зі згоди)
+RideHub --> Notify : F-12 push / SMS
+RideHub --> PRRO : F-10 дані розрахунку\n→ фіскальний чек
+RideHub --> Regulator : F-14 звітність,\nдані про ліцензії
+
+PSP ..> Driver : F-05 виплати водію
+
+legend right
+  |= Колір |= Значення |
+  |<#DDEBF7>| Система RideHub |
+  |<#F2F2F2>| Бізнес-партнери |
+  |<#FFF2CC>| Зовнішні сервіси |
+  |<#FCE4D6>| Регулятори |
+endlegend
+
+@enduml
