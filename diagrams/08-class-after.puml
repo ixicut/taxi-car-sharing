@@ -1,0 +1,137 @@
+@startuml 08-class-after
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 35
+skinparam ranksep 55
+
+title RideHub — рефакторинг TripManager: Strategy, Decorator, Observer, Adapter («після»)
+
+' ================= Trip Service (BC-01) =================
+package "Trip Service (BC-01)" #DDEBF7 {
+  class TripController
+  class TripApplicationService {
+    + createTrip(cmd, idempotencyKey)
+    + cancelTrip(tripId, actor)
+  }
+  class TripSagaOrchestrator {
+    + start(trip)
+    + onDriverAssigned(event)
+    + onPaymentFailed(event)
+    - compensate(trip)
+  }
+  class TripStateMachine {
+    + apply(trip, event)
+  }
+  interface TripStatusListener <<Observer>> {
+    + onStatusChanged(trip, from, to)
+  }
+  class OutboxWriter
+  class AuditLogListener
+  class MetricsListener
+
+  interface MapProvider <<Adapter target>> {
+    + route(from, to) : Route
+  }
+  class GoogleMapsAdapter <<Adapter>>
+  class VisicomAdapter <<Adapter>>
+  class FailoverMapProvider <<Decorator>>
+
+  interface PricingClient
+  interface PaymentClient
+}
+
+' ================= Pricing Service (BC-04) =================
+package "Pricing Service (BC-04)" #D9E1F2 {
+  class PricingService {
+    + quote(route, carClass, promocode) : Money
+  }
+  class PricingStrategyFactory
+  interface PricingStrategy <<Strategy>> {
+    + calculate(ctx : PricingContext) : Money
+  }
+  class DistanceTimePricing
+  class PerMinuteRentalPricing
+  class FixedZonePricing <<приклад розширення>>
+  abstract class PricingDecorator <<Decorator>>
+  class NightSurcharge
+  class SurgeMultiplierDecorator
+  class PromocodeDiscount
+  class Tariff <<дані, US-21>>
+}
+
+' ================= Payment Service (BC-05) =================
+package "Payment Service (BC-05)" #FFE699 {
+  class PaymentService {
+    + hold() + capture() + release() + refund()
+  }
+  interface PaymentGateway <<Adapter target>>
+  class LiqPayAdapter <<Adapter>>
+  class WayForPayAdapter <<Adapter>>
+  class ResilientPaymentGateway <<Decorator>> {
+    Circuit Breaker + Retry (ADR-005)
+  }
+}
+
+' ================= Notification Service (BC-08) =================
+package "Notification Service (BC-08)" #F4E1F7 {
+  class TripEventConsumer <<Observer: підписник>>
+  class NotificationRouter
+  interface PushGateway <<Adapter target>>
+  class FcmAdapter <<Adapter>>
+  class ApnsAdapter <<Adapter>>
+  class SmsAdapter <<Adapter>>
+}
+
+queue "Kafka\ntrip.status.changed" as Kafka
+
+' ---------- Trip Service ----------
+TripController --> TripApplicationService
+TripApplicationService --> TripSagaOrchestrator
+TripSagaOrchestrator --> TripStateMachine
+TripStateMachine o-- "*" TripStatusListener : listeners
+TripStatusListener <|.. OutboxWriter
+TripStatusListener <|.. AuditLogListener
+TripStatusListener <|.. MetricsListener
+TripApplicationService --> MapProvider
+MapProvider <|.. GoogleMapsAdapter
+MapProvider <|.. VisicomAdapter
+MapProvider <|.. FailoverMapProvider
+FailoverMapProvider o-- "2..*" MapProvider : delegates
+TripSagaOrchestrator --> PricingClient : gRPC
+TripSagaOrchestrator --> PaymentClient : gRPC
+
+' ---------- Pricing ----------
+PricingService --> PricingStrategyFactory
+PricingStrategyFactory ..> PricingStrategy : creates
+PricingStrategy <|.. DistanceTimePricing
+PricingStrategy <|.. PerMinuteRentalPricing
+PricingStrategy <|.. FixedZonePricing
+PricingStrategy <|.. PricingDecorator
+PricingDecorator o-- "1" PricingStrategy : wrapped
+PricingDecorator <|-- NightSurcharge
+PricingDecorator <|-- SurgeMultiplierDecorator
+PricingDecorator <|-- PromocodeDiscount
+DistanceTimePricing ..> Tariff : читає
+PerMinuteRentalPricing ..> Tariff : читає
+
+' ---------- Payment ----------
+PaymentService --> PaymentGateway
+PaymentGateway <|.. LiqPayAdapter
+PaymentGateway <|.. WayForPayAdapter
+PaymentGateway <|.. ResilientPaymentGateway
+ResilientPaymentGateway o-- "1" PaymentGateway : wrapped
+
+' ---------- Notification ----------
+TripEventConsumer --> NotificationRouter
+NotificationRouter --> PushGateway
+PushGateway <|.. FcmAdapter
+PushGateway <|.. ApnsAdapter
+PushGateway <|.. SmsAdapter
+
+' ---------- Між сервісами ----------
+PricingClient ..> PricingService : gRPC
+PaymentClient ..> PaymentService : gRPC
+OutboxWriter ..> Kafka : publish (outbox relay)
+Kafka ..> TripEventConsumer : subscribe
+
+@enduml

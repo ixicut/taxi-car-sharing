@@ -1,0 +1,75 @@
+@startuml 08-class-before
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 40
+skinparam ranksep 60
+
+title RideHub Legacy — анти-патерн God Object: TripManager («до»)
+
+package "Legacy Dispatch Monolith" #FDF2F0 {
+
+  class TripManager <<God Object>> #F8CBAD {
+    - db : SharedDatabase
+    - liqPay : LiqPayClient
+    - maps : GoogleMapsClient
+    - fcm : FcmClient
+    - sms : SmsGatewayClient
+    --
+    + createTrip(passengerId, from, to, carClass, promo)
+    + calculatePrice(trip) : Money
+    + findDriver(trip) : Driver
+    + holdPayment(trip)
+    + capturePayment(trip)
+    + cancelTrip(tripId, who)
+    + onStatusChanged(trip, newStatus)
+    + applyPromocode(trip, code)
+    + updateDriverBalance(driverId, amount)
+    + generateReceipt(trip)
+    + sendNotifications(trip)
+  }
+
+  note right of TripManager
+    **calculatePrice** — розгалужена if/else:
+    if (carClass == ECONOMY) ...
+    else if (carClass == COMFORT) ...
+    else if (rental) perMinute ...
+    if (night) ...  if (surge > 1) ...  if (promo) ...
+
+    **onStatusChanged** — switch (status):
+    кожен case напряму викликає
+    push, SMS, баланс, чек, аналітику.
+
+    **findDriver** — SQL по спільних
+    таблицях drivers / positions.
+  end note
+
+  class SharedDatabase <<single schema>> {
+    trips, drivers, positions,
+    tariffs, payments, balances
+  }
+}
+
+class LiqPayClient <<vendor SDK>>
+class GoogleMapsClient <<vendor SDK>>
+class FcmClient <<vendor SDK>>
+class SmsGatewayClient <<vendor SDK>>
+
+TripManager --> SharedDatabase : SQL до всіх таблиць
+TripManager --> LiqPayClient : прямі виклики
+TripManager --> GoogleMapsClient : прямі виклики
+TripManager --> FcmClient : прямі виклики
+TripManager --> SmsGatewayClient : прямі виклики
+
+legend right
+  Відповідальності TripManager:
+  1 життєвий цикл поїздки
+  2 ціноутворення (усі тарифи)
+  3 матчинг
+  4 платежі
+  5 сповіщення
+  6 промокоди
+  7 баланси водіїв
+  8 чеки
+endlegend
+
+@enduml

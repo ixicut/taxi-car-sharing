@@ -1,0 +1,75 @@
+@startuml 08-strangler-fig
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 40
+skinparam ranksep 70
+
+title RideHub — Strangler Fig: проміжний стан міграції (під час етапу E4) та цільовий стан
+
+actor "Клієнти\n(застосунки, консоль)" as Clients
+
+component "**E1** API Gateway\n(Kong, feature flags)" as Gateway #D9E1F2
+
+package "Legacy Dispatch Monolith (зменшується)" #FDF2F0 {
+  component "Матчинг (авто)\n**E4** → Matching" as LMatch
+  component "Trip + Pricing + Payment\n(TripManager)\n**E3 / E5**" as LTrip
+  component "Консоль диспетчера,\nручне призначення\n**E6**" as LConsole
+  component "Модуль геопозицій\n**E2**" as LLoc
+}
+database "Спільна БД\nлегасі\n**E7**: видалити" as LegacyDb #F8CBAD
+
+package "Нові сервіси" #E2EFDA {
+  component "Location Service\n(Redis GEO)\n**E2**" as NLoc
+  component "Pricing Service\n(Strategy + Decorator)\n**E3**" as NPrice
+  component "Matching Service\n**E4**" as NMatch
+  component "Trip Service\n(Saga) + Payment Service\n**E5**" as NTrip
+  component "Web Console\n+ manual assign API\n**E6**" as NConsole
+}
+
+queue "Kafka" as Kafka
+component "CDC (Debezium)\nлегасі → Kafka" as Cdc #FFF2CC
+component "Legacy sync adapter\n(тимчасовий ACL)" as Acl #FFF2CC
+
+Clients --> Gateway
+
+Gateway --> NLoc : читання позицій\n(E2, 100 %)
+Gateway --> NPrice : quote\n(E3, canary → 100 %)
+Gateway --> NMatch : матчинг за flag\n(E4: 5 % → 50 % → 100 %)
+Gateway --> NTrip : нові поїздки\n(E5, за містом)
+Gateway --> NConsole : (E6)
+
+Gateway ..> LMatch : решта трафіку
+Gateway ..> LTrip : поїздки, створені\nдо перемикання
+Gateway ..> LConsole : до E6
+
+LLoc --> LegacyDb
+LMatch --> LegacyDb
+LTrip --> LegacyDb
+LConsole --> LegacyDb
+
+LegacyDb --> Cdc : зміни позицій,\nстатуси
+Cdc --> Kafka : driver.location.updated
+Kafka --> NLoc
+
+NMatch --> Kafka : driver.assigned
+Kafka --> Acl : зворотна синхронізація\n(поки діє легасі-консоль)
+Acl --> LegacyDb
+
+NTrip --> Kafka : trip.*, payment.*
+
+note bottom of LegacyDb
+  Правило: у кожен момент
+  кожну таблицю пише
+  **рівно один** власник.
+  Передача володіння — на етапі
+  відповідного модуля.
+end note
+
+legend right
+  |= Лінія |= Значення |
+  | суцільна | трафік іде в нові сервіси |
+  | пунктир | трафік ще іде в легасі |
+  |<#FFF2CC>| Тимчасові компоненти міграції |
+endlegend
+
+@enduml

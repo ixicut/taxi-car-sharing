@@ -108,3 +108,18 @@
 | ADR-007 | Adapter для партнерів | ASR-06, 03 | 03-components (зовнішні інтерфейси), 04-c4-container |
 | ADR-008 | API Gateway | ASR-02, 05 | 04-c4-container (CT-04) |
 | ADR-009 | Database-per-service | ASR-02, 05, 06 | 04-c4-container (сховища), 03-domain-model (BC) |
+
+## Патерни та міграція
+
+Заповнено на кроці 8 ([08-antipattern-migration.md](08-antipattern-migration.md)).
+
+| Проблема легасі | Патерн / підхід | ASR / NFR | ADR | Діаграма |
+|---|---|---|---|---|
+| `if/else` тарифів у `TripManager` | Strategy (`PricingStrategy`), тарифи як дані `Tariff` | NFR-12, US-21 | ADR-001 | 08-class-after |
+| Комбінації нічного тарифу, surge, промокоду | Decorator (`PricingDecorator`) | NFR-12, US-09 | — | 08-class-after |
+| Прямі виклики SDK PSP, карт, push | Adapter | ASR-06, NFR-11 | ADR-007 | 08-class-after |
+| Збої PSP в бізнес-коді | Decorator `ResilientPaymentGateway` (CB + Retry) | ASR-03, NFR-05 | ADR-005 | 08-class-after, 06-circuit-breaker |
+| Прямі виклики сповіщень при зміні статусу | Observer (`TripStatusListener`, Kafka `trip.status.changed`) | ASR-03, NFR-05 | ADR-003 | 08-class-after |
+| God Object керує процесом | Оркестратор Saga + `TripStateMachine` | ASR-04 | ADR-002 | 08-class-after, 06-saga-orchestration |
+| Спільна БД легасі | Database-per-service, поетапна передача володіння | ASR-02, NFR-12 | ADR-009 | 08-strangler-fig |
+| Міграція без «великого вибуху» | Strangler Fig (E1…E7) | ASR-01, ASR-02, ASR-04 | ADR-001, ADR-008 | 08-strangler-fig |
