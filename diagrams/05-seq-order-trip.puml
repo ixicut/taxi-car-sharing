@@ -1,0 +1,128 @@
+@startuml 05-seq-order-trip
+!include _style.puml
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 220
+autonumber
+
+title RideHub — Діаграма послідовності: замовлення поїздки таксі (UC-01, UC-05)
+
+actor "Пасажир" as P
+participant "Passenger App\n(CT-01)" as PA
+participant "API Gateway\n(CT-04)" as GW
+participant "Trip Service\n(CT-06)" as TS
+participant "Картографічний\nсервіс" as MAPS
+participant "Pricing Service\n(CT-09)" as PR
+participant "Payment Service\n(CT-10)" as PAY
+participant "PSP" as PSP
+queue "Kafka\n(CT-13)" as K
+participant "Matching Service\n(CT-07)" as MS
+participant "Location Service\n(CT-08)" as LS
+participant "Notification Service\n(CT-12)" as NS
+participant "Driver App\n(CT-02)" as DA
+actor "Водій" as D
+
+== 1. Розрахунок ціни (UC-03, UC-02) ==
+
+P -> PA : вказує «звідки», «куди», клас авто
+PA -> GW : POST /trips/quote
+GW -> TS : POST /trips/quote
+TS -> MAPS : GET /route (from, to)
+MAPS --> TS : distanceKm, etaMinutes
+TS -> PR : gRPC Quote(route, carClass, promocode?)
+PR --> TS : fixedPrice, surgeFactor, quoteId (дійсний 5 хв)
+TS --> GW : 200 OK
+GW --> PA : 200 OK
+PA --> P : ціна; surge показано явно, якщо > 1,0
+
+== 2. Створення поїздки і hold коштів (UC-01, UC-12, UC-13) ==
+
+P -> PA : «Замовити», оплата карткою
+PA -> GW : POST /trips {quoteId, paymentMethodId}\nIdempotency-Key: k1
+GW -> TS : POST /trips
+TS -> TS : TaxiTrip = **CREATED**\n(транзакція БД + outbox)
+TS -> PAY : gRPC Hold(tripId, fixedPrice, methodId, key = k1)
+PAY -> PSP : POST /holds (Idempotency-Key: k1)
+
+alt PSP відповів
+  PSP --> PAY : результат авторизації
+  break Помилковий потік: PSP відхилив платіж (недостатньо коштів, 3-D Secure)
+    PAY --> TS : DECLINED
+    TS --> GW : 402 Payment Required\n(TaxiTrip залишається CREATED)
+    GW --> PA : 402
+    PA --> P : «Оберіть інший спосіб оплати» (UC-01 A3)
+  end
+  PAY --> TS : HELD
+else Помилковий потік: PSP недоступний (таймаути, Circuit Breaker OPEN)
+  PAY -> PSP : повтори з експоненційною затримкою (крок 6)
+  PSP -[#red]x PAY : timeout
+  PAY -> PAY : Payment.status = PENDING_RETRY,\nhold повторюється у фоні
+  PAY --> TS : PENDING_RETRY
+  note over TS, PAY : NFR-05: недоступність PSP\nне блокує поїздку (UC-01 A4)
+end
+
+TS -> TS : TaxiTrip = **SEARCHING**,\nтаймер пошуку 3 хв
+TS -> K : trip.search.requested (через outbox)
+TS --> GW : 201 Created {tripId, status: SEARCHING}
+GW --> PA : 201 Created
+PA --> P : «Шукаємо водія…»
+
+== 3. Пошук і призначення водія (UC-05, UC-07) ==
+
+K -> MS : trip.search.requested
+MS -> LS : gRPC NearbyDrivers(pickup, 5 км)
+LS --> MS : кандидати (відстань, рейтинг)
+
+alt Основний потік: водій прийняв замовлення
+  loop для кожного кандидата, доки хтось не прийме
+    MS -> K : driver.offer.created
+    K -> NS : driver.offer.created
+    NS -> DA : push «Нове замовлення»
+    DA -> D : точка подачі, відстань, ціна (15 с)
+    alt Водій прийняв
+      D -> DA : «Прийняти»
+      DA -> GW : POST /offers/{offerId}/accept
+      GW -> MS : accept
+      MS --> DA : 200 OK, навігація до пасажира
+    else Альтернативний потік: відхилив або 15 с без відповіді (UC-05 A1)
+      MS -> MS : пропозиція переходить\nнаступному кандидату
+    end
+  end
+  MS -> K : driver.assigned
+  K -> TS : driver.assigned
+  TS -> TS : TaxiTrip = **DRIVER_ASSIGNED**
+  TS -> K : trip.status.changed
+  K -> NS : trip.status.changed
+  NS -> PA : push «Водія призначено»
+  K -> LS : driver.assigned
+  LS -> LS : почати трансляцію\nпозиції водія пасажиру
+  PA --> P : водій, авто, номер, час подачі
+else Альтернативний потік: за 3 хв водія не знайдено (UC-01 A5)
+  TS -> TS : спрацював таймер пошуку
+  TS -> K : trip.status.changed {SEARCHING, SEARCH_TIMEOUT}
+  K -> NS : trip.status.changed
+  NS -> PA : push «Водія не знайдено»
+  PA --> P : підвищити клас / чекати / каршеринг поруч
+  P -> PA : відмовляється від альтернатив
+  PA -> GW : POST /trips/{tripId}/cancel
+  GW -> TS : cancel
+  TS -> PAY : gRPC Release(tripId) — компенсація hold
+  PAY -> PSP : DELETE /holds/{holdId}
+  TS -> TS : TaxiTrip = **CANCELLED**\n(cancelReason = NO_DRIVER_FOUND)
+  TS -> K : trip.status.changed
+  TS --> GW : 200 OK
+  GW --> PA : 200 OK
+end
+
+== 4. Відстеження водія (UC-08) ==
+
+loop кожні 3 с, доки поїздка активна
+  DA -> GW : WSS позиція (lat, lon, ts)
+  GW -> LS : WSS
+  LS -> LS : GEOADD у Redis GEO
+  LS -> GW : WSS позиція водія
+  GW -> PA : WSS
+end
+note over DA, PA : NFR-01: p95 «телефон водія → мапа пасажира» ≤ 2 с
+
+@enduml

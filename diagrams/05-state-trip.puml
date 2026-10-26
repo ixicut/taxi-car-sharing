@@ -1,0 +1,73 @@
+@startuml 05-state-trip
+!include _style.puml
+skinparam linetype polyline
+hide empty description
+
+title RideHub — Діаграма станів сутності TaxiTrip (TripStatus)
+
+state CREATED
+state SEARCHING
+state "Подача авто" as Pickup {
+  state DRIVER_ASSIGNED
+  state DRIVER_ARRIVING
+  state DRIVER_ARRIVED
+}
+state IN_PROGRESS
+state COMPLETED
+state PAID
+state CANCELLED
+state PAYMENT_FAILED
+state PAYMENT_RETRY
+state DEBT
+
+[*] --> CREATED : T-01 createTrip\n/ зафіксувати fixedPrice, surgeFactor
+
+CREATED --> CREATED : T-02 hold відхилено\n/ 402, обрати інший спосіб оплати
+CREATED --> SEARCHING : T-03 [hold = HELD або PENDING_RETRY\nабо оплата готівкою]\n/ trip.search.requested, таймер 3 хв
+CREATED --> CANCELLED : T-04 скасування пасажиром\n/ release hold
+
+SEARCHING --> SEARCHING : T-05 пропозицію відхилено\nабо 15 с без відповіді\n/ наступний кандидат
+SEARCHING --> DRIVER_ASSIGNED : T-06 driver.assigned\n/ push пасажиру
+SEARCHING --> CANCELLED : T-07 скасування пасажиром\nабо таймаут 3 хв [альтернативи відхилено]\n/ release hold
+
+DRIVER_ASSIGNED --> DRIVER_ARRIVING : T-08 водій ≤ 200 м від точки подачі\n/ push «Водій під'їжджає»
+DRIVER_ARRIVING --> DRIVER_ARRIVED : T-09 водій натиснув «На місці»\n/ старт таймера очікування
+
+Pickup --> SEARCHING : T-10 водій скасував\n/ звільнити водія, повторний пошук
+Pickup --> CANCELLED : T-11 скасування пасажиром\n[< 2 хв після призначення]\n/ release hold
+Pickup --> CANCELLED : T-12 скасування пасажиром\n[≥ 2 хв після призначення]\n/ штраф (UC-10)
+DRIVER_ARRIVED --> CANCELLED : T-13 пасажир не вийшов за 5 хв\n/ cancelledBy = DRIVER, штраф
+
+DRIVER_ARRIVED --> IN_PROGRESS : T-14 водій почав поїздку
+IN_PROGRESS --> COMPLETED : T-15 водій завершив поїздку\n/ finalAmount, trip.completed
+
+COMPLETED --> PAID : T-16 payment.captured\nабо готівка / комісія з балансу водія
+COMPLETED --> PAYMENT_FAILED : T-17 payment.failed\n/ attempts = 1
+
+PAYMENT_FAILED --> PAYMENT_RETRY : T-18 [attempts < 5]\n/ запланувати повтор
+PAYMENT_RETRY --> PAID : T-19 payment.captured
+PAYMENT_RETRY --> PAYMENT_FAILED : T-20 payment.failed\n/ attempts++
+PAYMENT_FAILED --> DEBT : T-21 [attempts = 5]\n/ борг, блок нових замовлень
+DEBT --> PAID : T-22 пасажир погасив борг
+
+PAID --> [*]
+CANCELLED --> [*]
+
+note right of CANCELLED
+  cancelReason: PASSENGER_CANCELLED,
+  NO_DRIVER_FOUND, PASSENGER_NO_SHOW
+  cancelledBy: PASSENGER | DRIVER | SYSTEM
+end note
+
+note right of IN_PROGRESS
+  Скасування недоступне
+  (UC-09 A3)
+end note
+
+note bottom of PAYMENT_RETRY
+  Повтори (спроби 2–5): через 5 хв, 30 хв, 2 год, 24 год.
+  Кожна спроба всередині ще має
+  Retry + Circuit Breaker до PSP (крок 6)
+end note
+
+@enduml
