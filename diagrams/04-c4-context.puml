@@ -1,0 +1,36 @@
+@startuml 04-c4-context
+!include <C4/C4_Context>
+
+LAYOUT_WITH_LEGEND()
+title C4 Level 1 — System Context: RideHub
+
+Person(passenger, "Пасажир / користувач каршерингу", "ST-01, ST-02. Замовляє таксі, бронює авто, платить, відстежує водія")
+Person(driver, "Водій", "ST-03. Виходить на лінію, приймає замовлення, передає геопозицію")
+Person(dispatcher, "Диспетчер / підтримка", "ST-06. Моніторить поїздки, призначає водія вручну, повертає кошти")
+Person(admin, "Менеджер продукту", "ST-09. Керує тарифами і surge")
+
+System(ridehub, "RideHub", "Агрегатор таксі та каршерингу: замовлення, матчинг, геолокація, ціноутворення, оплата")
+
+System_Ext(fleet, "Системи таксопарків", "ST-04. Реєстр водіїв і авто, звіти")
+System_Ext(telematics, "Телематика каршеринг-операторів", "ST-05. Каталог і стан авто, команди відкрити / закрити")
+System_Ext(psp, "Платіжний провайдер", "ST-07. LiqPay / WayForPay: hold, capture, refund, payout")
+System_Ext(maps, "Картографічний сервіс", "ST-08. Google Maps / Visicom: маршрут, ETA, геокодування")
+System_Ext(kyc, "KYC-провайдер «Дія»", "ST-13. Перевірка документів водія")
+System_Ext(notify, "Провайдери сповіщень", "ST-14. FCM / APNs, SMS-шлюз")
+System_Ext(prro, "ПРРО", "Фіскальні чеки")
+
+Rel(passenger, ridehub, "Замовляє поїздку, бронює авто, платить", "HTTPS, WebSocket")
+Rel(driver, ridehub, "Приймає замовлення, передає геопозицію", "HTTPS, WebSocket")
+Rel(dispatcher, ridehub, "Моніторинг, ручне призначення, refund", "HTTPS")
+Rel(admin, ridehub, "Керує тарифами", "HTTPS")
+
+Rel(fleet, ridehub, "Реєстр водіїв і авто; звіти", "HTTPS/REST, API-ключ")
+Rel(ridehub, telematics, "Команди, запит стану авто", "REST, MQTT")
+Rel(ridehub, psp, "Hold / capture / refund / payout", "HTTPS/REST")
+Rel(psp, ridehub, "Webhook: результат платежу", "HTTPS, HMAC")
+Rel(ridehub, maps, "Маршрут, ETA, геокодування", "HTTPS/REST")
+Rel(ridehub, kyc, "Запит документів водія (зі згоди)", "HTTPS/REST")
+Rel(ridehub, notify, "Push і SMS", "HTTPS")
+Rel(ridehub, prro, "Дані розрахунку", "HTTPS/REST")
+
+@enduml

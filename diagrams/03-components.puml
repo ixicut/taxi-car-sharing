@@ -1,0 +1,99 @@
+@startuml 03-components
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 50
+skinparam ranksep 80
+skinparam componentStyle uml2
+
+title RideHub — Діаграма компонентів (один компонент = один bounded context)
+
+' ---------- Внутрішні компоненти ----------
+component "TripService\n(BC-01 Trip & Ordering)" as Trip #DDEBF7
+component "MatchingService\n(BC-02 Dispatch & Matching)" as Matching #FFF2CC
+component "LocationService\n(BC-03 Geo & Location)" as Location #EDEDED
+component "PricingService\n(BC-04 Pricing)" as Pricing #D9E1F2
+component "PaymentService\n(BC-05 Payment)" as Payment #FFE699
+component "IdentityService\n(BC-06 Identity & Driver Onboarding)" as Identity #E2EFDA
+component "CarsharingService\n(BC-07 Carsharing & Fleet)" as Carsharing #FCE4D6
+component "NotificationService\n(BC-08 Notification)" as Notification #F4E1F7
+
+' ---------- Зовнішні компоненти ----------
+component "Картографічний сервіс\n(ST-08)" as MapExt <<external>> #F2F2F2
+component "Платіжний провайдер\n(ST-07)" as PspExt <<external>> #F2F2F2
+component "KYC «Дія»\n(ST-13)" as KycExt <<external>> #F2F2F2
+component "Телематика авто\n(ST-05)" as TelExt <<external>> #F2F2F2
+component "FCM / APNs / SMS\n(ST-14)" as PushExt <<external>> #F2F2F2
+
+' ---------- Інтерфейси: provided (lollipop) ----------
+interface ITripManagement as ITrip
+interface IDriverMatching as IMatch
+interface ILocationQuery as ILoc
+interface ILocationIngest as ILocIn
+interface IPricing as IPrice
+interface IPayment as IPay
+interface IIdentity as IId
+interface ICarsharing as ICar
+interface INotify as INot
+
+Trip -- ITrip
+Matching -- IMatch
+Location -- ILoc
+Location -- ILocIn
+Pricing -- IPrice
+Payment -- IPay
+Identity -- IId
+Carsharing -- ICar
+Notification -- INot
+
+' ---------- Інтерфейси: required (socket) ----------
+Trip ..> IPrice : requires
+Trip ..> IMatch : requires
+Trip ..> IPay : requires
+Trip ..> INot : requires
+
+Matching ..> ILoc : requires
+Matching ..> INot : requires
+
+Carsharing ..> IPrice : requires
+Carsharing ..> IPay : requires
+Carsharing ..> INot : requires
+
+' ---------- Зовнішні інтерфейси ----------
+interface IMapProvider as IMap
+interface IPaymentGateway as IPsp
+interface IKycProvider as IKyc
+interface ITelematics as ITel
+interface IPushGateway as IPush
+
+MapExt -- IMap
+PspExt -- IPsp
+KycExt -- IKyc
+TelExt -- ITel
+PushExt -- IPush
+
+Trip ..> IMap : requires
+Location ..> IMap : requires
+Payment ..> IPsp : requires
+Identity ..> IKyc : requires
+Carsharing ..> ITel : requires
+Notification ..> IPush : requires
+
+note bottom of Notification
+  Логічні залежності на INotify на C4-діаграмі (крок 4)
+  реалізуються асинхронно: події в Kafka,
+  Notification їх споживає (Observer, крок 8).
+end note
+
+note top of Location
+  ILocationIngest — вхід потоку геопозицій від
+  застосунків водіїв (реалізація: WebSocket / Kafka).
+end note
+
+legend right
+  |= Позначення |= Значення |
+  | -- | provided interface (lollipop) |
+  | ..> | required interface (socket) |
+  |<#F2F2F2>| Зовнішній компонент |
+endlegend
+
+@enduml

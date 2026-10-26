@@ -1,0 +1,228 @@
+@startuml 03-domain-model
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 40
+skinparam ranksep 50
+skinparam packageStyle rectangle
+
+title RideHub — Доменна модель (з межами bounded contexts)
+
+' ============ BC-06 Identity / Driver Onboarding ============
+package "BC-06 Identity & Driver Onboarding" #E2EFDA {
+  abstract class User {
+    id : UUID
+    phone : String
+    name : String
+    registeredAt : DateTime
+    blocked : Boolean
+  }
+  class Passenger {
+    rating : Decimal
+  }
+  class Driver {
+    verificationStatus : VerificationStatus
+    rating : Decimal
+    deviceId : String
+  }
+  class DriverDocument {
+    type : DocumentType
+    number : String
+    validUntil : Date
+    verified : Boolean
+  }
+}
+
+' ============ BC-07 Carsharing / Fleet ============
+package "BC-07 Carsharing & Fleet" #FCE4D6 {
+  class Fleet {
+    id : UUID
+    name : String
+    kind : FleetKind
+    commissionRate : Decimal
+  }
+  abstract class Vehicle {
+    id : UUID
+    plate : String
+    model : String
+    carClass : CarClass
+  }
+  class TaxiCar
+  class SharingCar {
+    fuelOrCharge : Integer
+    locked : Boolean
+    telematicsId : String
+  }
+  class CarsharingRental {
+    status : RentalStatus
+    reservedUntil : DateTime
+    perMinuteRate : Decimal
+  }
+}
+
+' ============ BC-01 Trip / Ordering ============
+package "BC-01 Trip & Ordering" #DDEBF7 {
+  abstract class Trip {
+    id : UUID
+    createdAt : DateTime
+    startedAt : DateTime
+    finishedAt : DateTime
+    fixedPrice : Money
+    surgeFactor : Decimal
+    finalAmount : Money
+  }
+  class TaxiTrip {
+    status : TripStatus
+    carClass : CarClass
+    cancelReason : CancelReason
+    cancelledBy : CancelActor
+  }
+  class Route {
+    distanceKm : Decimal
+    etaMinutes : Integer
+  }
+  class Waypoint {
+    seq : Integer
+    address : String
+  }
+  class Rating {
+    stars : Integer [1..5]
+    comment : String
+  }
+  enum TripStatus {
+    CREATED
+    SEARCHING
+    DRIVER_ASSIGNED
+    DRIVER_ARRIVING
+    DRIVER_ARRIVED
+    IN_PROGRESS
+    COMPLETED
+    PAID
+    CANCELLED
+    PAYMENT_FAILED
+    PAYMENT_RETRY
+    DEBT
+  }
+  enum RentalStatus {
+    RESERVED
+    UNLOCKED
+    IN_RENT
+    PARKED
+    FINISHED
+  }
+}
+
+' ============ BC-02 Dispatch / Matching ============
+package "BC-02 Dispatch & Matching" #FFF2CC {
+  class Shift {
+    startedAt : DateTime
+    endedAt : DateTime
+    online : Boolean
+  }
+}
+
+' ============ BC-03 Geo / Location ============
+package "BC-03 Geo & Location" #EDEDED {
+  class GeoPoint <<value object>> {
+    lat : Decimal
+    lon : Decimal
+  }
+}
+
+' ============ BC-04 Pricing ============
+package "BC-04 Pricing" #D9E1F2 {
+  class Tariff {
+    city : String
+    carClass : CarClass
+    baseFare : Money
+    perKm : Money
+    perMinute : Money
+    validFrom : DateTime
+  }
+  class SurgeMultiplier {
+    zone : String
+    factor : Decimal
+    validUntil : DateTime
+  }
+  class Promocode {
+    code : String
+    discountPercent : Integer
+    validUntil : Date
+    usageLimit : Integer
+  }
+}
+
+' ============ BC-05 Payment ============
+package "BC-05 Payment" #FFE699 {
+  class Payment {
+    status : PaymentStatus
+    amountHeld : Money
+    amountCaptured : Money
+    attempts : Integer
+    idempotencyKey : String
+  }
+  class PaymentMethod {
+    type : CARD | CASH | WALLET
+    pspToken : String
+    last4 : String
+  }
+  class Receipt {
+    fiscalNumber : String
+    issuedAt : DateTime
+    url : String
+  }
+}
+
+' ---------- Узагальнення ----------
+User <|-- Passenger
+User <|-- Driver
+Vehicle <|-- TaxiCar
+Vehicle <|-- SharingCar
+Trip <|-- TaxiTrip
+Trip <|-- CarsharingRental
+
+' ---------- Композиція ----------
+Trip *-- "1" Route
+Route *-- "2..*" Waypoint
+Driver *-- "1..*" DriverDocument
+Driver *-- "0..*" Shift
+Passenger *-- "0..*" PaymentMethod
+
+' ---------- Агрегація ----------
+Fleet o-- "0..*" Vehicle
+Fleet o-- "0..*" Driver
+
+' ---------- Асоціації ----------
+Trip "*" -- "1" Passenger : замовляє >
+Trip "*" -- "1" Tariff : розрахована за >
+Trip "*" -- "0..1" Promocode : застосовано >
+Trip "1" -- "0..1" Payment : оплачується >
+Payment "*" -- "1" PaymentMethod : через >
+Payment "1" -- "0..1" Receipt : фіскалізується >
+
+TaxiTrip "*" -- "0..1" Driver : виконує >
+TaxiTrip "*" -- "0..1" TaxiCar : на авто >
+TaxiTrip "1" -- "0..1" Rating : оцінюється >
+CarsharingRental "*" -- "1" SharingCar : орендує >
+
+Shift "*" -- "1" TaxiCar : на авто >
+Tariff "1" -- "0..*" SurgeMultiplier : коригується >
+Waypoint ..> GeoPoint : <<uses>>
+SharingCar ..> GeoPoint : <<uses>> position
+
+' ---------- Enum-залежності ----------
+TaxiTrip ..> TripStatus
+CarsharingRental ..> RentalStatus
+
+note bottom of Trip
+  Trip — спільна абстракція поїздки і оренди.
+  Атрибут **status** визначено в підкласах:
+  TaxiTrip.status (TripStatus) і
+  CarsharingRental.status (RentalStatus).
+end note
+
+note right of Passenger
+  Passenger = клієнт RideHub
+  (і замовник таксі, і орендар авто).
+end note
+
+@enduml

@@ -1,0 +1,108 @@
+@startuml 04-c4-container
+!include <C4/C4_Container>
+
+LAYOUT_WITH_LEGEND()
+title C4 Level 2 — Containers: RideHub
+
+Person(passenger, "Пасажир / користувач каршерингу", "ST-01, ST-02")
+Person(driver, "Водій", "ST-03")
+Person(staff, "Диспетчер, менеджер продукту, партнер", "ST-06, ST-09, ST-04 (кабінет)")
+
+System_Ext(fleet, "Системи таксопарків", "ST-04")
+System_Ext(telematics, "Телематика авто", "ST-05")
+System_Ext(psp, "Платіжний провайдер", "ST-07")
+System_Ext(maps, "Картографічний сервіс", "ST-08")
+System_Ext(kyc, "KYC «Дія»", "ST-13")
+System_Ext(notify, "FCM / APNs / SMS", "ST-14")
+System_Ext(prro, "ПРРО", "Фіскалізація")
+
+System_Boundary(ridehub, "RideHub") {
+
+  Container(passengerApp, "Passenger App", "Flutter (iOS, Android)", "Замовлення, мапа, оплата, каршеринг")
+  Container(driverApp, "Driver App", "Flutter (iOS, Android)", "Лінія, пропозиції, навігація, передача геопозиції")
+  Container(webConsole, "Web Console", "React SPA", "Консоль диспетчера, адмін-панель тарифів, кабінет партнера")
+
+  Container(gateway, "API Gateway", "Kong", "Маршрутизація, перевірка JWT, rate limiting, WebSocket-проксі")
+  Container(identity, "Identity Service", "Keycloak (OAuth2/OIDC)", "BC-06. Вхід, MFA, прив'язка пристрою, онбординг водія")
+  ContainerDb(identityDb, "Identity DB", "PostgreSQL", "Користувачі, водії, документи")
+
+  Container(trip, "Trip Service", "Java, Spring Boot", "BC-01. Життєвий цикл поїздки, оркестратор Saga, Outbox")
+  ContainerDb(tripDb, "Trip DB", "PostgreSQL", "Поїздки, маршрути, оцінки, outbox")
+
+  Container(matching, "Matching Service", "Go", "BC-02. Підбір водія, пропозиції, зміни")
+  ContainerDb(matchingDb, "Matching Store", "Redis", "Стан пропозицій, доступність водіїв")
+
+  Container(location, "Location Service", "Go", "BC-03. Приймання геопозицій, геоіндекс, push позицій")
+  ContainerDb(locationDb, "Location Index", "Redis GEO", "Поточні позиції водіїв і авто")
+
+  Container(pricing, "Pricing Service", "Kotlin, Spring Boot", "BC-04. Тарифи, surge, промокоди")
+  ContainerDb(pricingDb, "Pricing DB", "PostgreSQL", "Тарифи, коефіцієнти, промокоди")
+
+  Container(payment, "Payment Service", "Java, Spring Boot", "BC-05. Hold, capture, refund, баланси; Circuit Breaker + Retry")
+  ContainerDb(paymentDb, "Payment DB", "PostgreSQL", "Платежі, баланси, outbox")
+
+  Container(carsharing, "Carsharing Service", "Java, Spring Boot", "BC-07. Реєстр партнерів і авто, оренда, адаптери")
+  ContainerDb(carsharingDb, "Carsharing DB", "PostgreSQL", "Парки, авто, оренди")
+
+  Container(notification, "Notification Service", "Node.js", "BC-08. Push і SMS, шаблони, повтори")
+
+  ContainerQueue(kafka, "Message Broker", "Apache Kafka", "driver.location.updated, trip.*, driver.*, payment.*, rental.*")
+}
+
+' ---------- Клієнти -> Gateway ----------
+Rel(passengerApp, gateway, "API-запити", "HTTPS/REST, JWT")
+Rel(passengerApp, gateway, "Позиція водія в реальному часі", "WebSocket (WSS)")
+Rel(driverApp, gateway, "Прийняття замовлень, статуси", "HTTPS/REST, JWT")
+Rel(driverApp, gateway, "Потік геопозицій", "WebSocket (WSS)")
+Rel(webConsole, gateway, "API, жива мапа", "HTTPS/REST, WSS")
+Rel(passenger, passengerApp, "Користується")
+Rel(driver, driverApp, "Користується")
+Rel(staff, webConsole, "Користується", "HTTPS")
+Rel(fleet, gateway, "Реєстр водіїв і авто", "HTTPS/REST, API-ключ")
+
+' ---------- Gateway -> сервіси ----------
+Rel(gateway, identity, "Автентифікація, JWKS", "OIDC, HTTPS")
+Rel(gateway, trip, "Поїздки, ціна", "REST")
+Rel(gateway, matching, "Відповідь водія, ручне призначення", "REST")
+Rel(gateway, location, "Прийом і роздача позицій", "WebSocket")
+Rel(gateway, payment, "Способи оплати, чеки", "REST")
+Rel(gateway, pricing, "Керування тарифами", "REST")
+Rel(gateway, carsharing, "Каршеринг, кабінет партнера", "REST")
+
+' ---------- Синхронні міжсервісні виклики ----------
+Rel(trip, pricing, "Розрахунок ціни", "gRPC")
+Rel(trip, payment, "Hold / release коштів", "gRPC")
+Rel(trip, maps, "Маршрут і ETA", "HTTPS/REST")
+Rel(matching, location, "Водії в радіусі", "gRPC")
+Rel(location, maps, "ETA подачі", "HTTPS/REST")
+Rel(carsharing, pricing, "Вартість оренди", "gRPC")
+Rel(carsharing, payment, "Hold / capture оренди", "gRPC")
+Rel(payment, psp, "Hold / capture / refund (CB + Retry)", "HTTPS/REST")
+Rel(psp, payment, "Webhook результату", "HTTPS, HMAC")
+Rel(payment, prro, "Фіскальний чек", "HTTPS/REST")
+Rel(identity, kyc, "Перевірка документів", "HTTPS/REST")
+Rel(carsharing, telematics, "Команди, стан авто", "REST, MQTT")
+Rel(notification, notify, "Push, SMS", "HTTPS")
+
+' ---------- Асинхронні взаємодії ----------
+Rel(trip, kafka, "trip.search.requested, trip.status.changed, trip.completed", "Kafka (async)")
+Rel(matching, kafka, "driver.offer.created, driver.assigned", "Kafka (async)")
+Rel(location, kafka, "driver.location.updated", "Kafka (async)")
+Rel(payment, kafka, "payment.captured, payment.failed", "Kafka (async)")
+Rel(carsharing, kafka, "rental.status.changed", "Kafka (async)")
+Rel(kafka, matching, "trip.search.requested", "Kafka (async)")
+Rel(kafka, trip, "driver.assigned, payment.*", "Kafka (async)")
+Rel(kafka, payment, "trip.completed", "Kafka (async)")
+Rel(kafka, notification, "trip.*, driver.offer.created, payment.*", "Kafka (async)")
+Rel(kafka, location, "trip.status.changed, driver.assigned", "Kafka (async)")
+
+' ---------- Сховища (database-per-service) ----------
+Rel(identity, identityDb, "Читає / пише", "JDBC")
+Rel(trip, tripDb, "Читає / пише", "JDBC")
+Rel(matching, matchingDb, "Читає / пише", "Redis protocol")
+Rel(location, locationDb, "GEOADD / GEOSEARCH", "Redis protocol")
+Rel(pricing, pricingDb, "Читає / пише", "JDBC")
+Rel(payment, paymentDb, "Читає / пише", "JDBC")
+Rel(carsharing, carsharingDb, "Читає / пише", "JDBC")
+
+@enduml

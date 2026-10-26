@@ -1,0 +1,78 @@
+@startuml 03-usecase
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 40
+skinparam ranksep 60
+
+title RideHub — Use case: замовлення поїздки таксі
+
+left to right direction
+
+' ---------- Первинні актори ----------
+actor "Пасажир\n(ST-01)" as Passenger
+actor "Водій\n(ST-03)" as Driver
+actor "Диспетчер\n(ST-06)" as Dispatcher
+
+' ---------- Вторинні актори (зовнішні системи) ----------
+actor "Платіжний провайдер\n(ST-07)" as PSP <<system>>
+actor "Картографічний\nсервіс (ST-08)" as Maps <<system>>
+
+rectangle "RideHub" {
+  usecase "UC-01\nЗамовити поїздку" as UC01 #DDEBF7
+  usecase "UC-02\nРозрахувати вартість" as UC02
+  usecase "UC-03\nВизначити маршрут" as UC03
+  usecase "UC-04\nЗастосувати промокод" as UC04
+  usecase "UC-05\nПризначити водія" as UC05
+  usecase "UC-06\nРучне призначення\nдиспетчером" as UC06
+  usecase "UC-07\nПрийняти замовлення" as UC07
+  usecase "UC-08\nВідстежити водія" as UC08
+  usecase "UC-09\nСкасувати поїздку" as UC09
+  usecase "UC-10\nНарахувати штраф\nза скасування" as UC10
+  usecase "UC-11\nОплатити поїздку" as UC11
+  usecase "UC-12\nЗаблокувати кошти (hold)" as UC12
+  usecase "UC-13\nАвторизувати платіж" as UC13
+  usecase "UC-14\nЗавершити поїздку" as UC14
+}
+
+' ---------- Асоціації акторів ----------
+Passenger --> UC01
+Passenger --> UC08
+Passenger --> UC09
+Passenger --> UC11
+
+Driver --> UC07
+Driver --> UC14
+
+Dispatcher --> UC06
+
+UC03 --> Maps
+UC13 --> PSP
+
+' ---------- include ----------
+UC01 ..> UC02 : <<include>>
+UC01 ..> UC03 : <<include>>
+UC01 ..> UC05 : <<include>>
+UC05 ..> UC07 : <<include>>
+UC14 ..> UC11 : <<include>>
+UC11 ..> UC13 : <<include>>
+UC12 ..> UC13 : <<include>>
+
+' ---------- extend (стрілка від розширення до базового) ----------
+UC04 .up.> UC01 : <<extend>>\n[є промокод]
+UC12 .up.> UC01 : <<extend>>\n[оплата карткою]
+UC06 .up.> UC05 : <<extend>>\n[авто-матчинг невдалий]
+UC10 .up.> UC09 : <<extend>>\n[> 2 хв після призначення]
+
+note bottom of UC01
+  Extension points:
+  **promo** — після розрахунку вартості
+  **payment** — після створення поїздки
+end note
+
+legend right
+  |= Колір |= Значення |
+  |<#DDEBF7>| Центральний UC |
+  |<<system>>| Зовнішня система |
+endlegend
+
+@enduml
