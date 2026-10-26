@@ -1,0 +1,336 @@
+openapi: 3.0.3
+info:
+  title: RideHub Trip API
+  version: 1.0.0
+  description: |
+    Спрощений контракт Trip Service (CT-06, BC-01) для клієнтських застосунків.
+    Запити проходять через API Gateway (CT-04), який перевіряє JWT і застосовує rate limiting.
+
+    Правила:
+    - усі змінювальні запити (`POST`) приймають заголовок `Idempotency-Key` (UUID).
+      Повтор із тим самим ключем і тим самим тілом повертає збережену відповідь;
+      повтор із тим самим ключем і іншим тілом — `409`;
+    - помилки повертаються у форматі RFC 7807 (`application/problem+json`);
+    - версія API — у шляху (`/v1`); несумісні зміни виходять як `/v2`, `/v1` підтримується ще 6 місяців.
+servers:
+  - url: https://api.ridehub.ua/v1
+security:
+  - bearerAuth: []
+
+paths:
+  /trips/quote:
+    post:
+      operationId: createQuote
+      summary: Розрахувати ціну поїздки (UC-02, UC-03)
+      tags: [Trips]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteRequest' }
+      responses:
+        '200':
+          description: Ціну розраховано; quote дійсний 5 хв (US-02)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quote' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422':
+          description: Маршрут неможливо побудувати (точка поза зоною обслуговування)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /trips:
+    post:
+      operationId: createTrip
+      summary: Замовити поїздку (UC-01)
+      description: |
+        Створює `TaxiTrip` і запускає Saga «пошук водія → підтвердження → оплата».
+        Для оплати карткою синхронно виконується hold коштів.
+        Відповідь `201` повертається, коли поїздка перейшла в `SEARCHING`.
+        Призначення водія приходить пізніше: push і WebSocket, або `GET /trips/{tripId}`.
+      tags: [Trips]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTripRequest' }
+      responses:
+        '201':
+          description: Поїздку створено, триває пошук водія
+          headers:
+            Location:
+              schema: { type: string, example: /v1/trips/6f1c2a8e-3b7d-4c55-9a51-0d7e4b2f9c10 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trip' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402':
+          description: PSP відхилив hold (UC-01 A3). Поїздка залишається `CREATED`; можна повторити з іншим `paymentMethodId`
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: |
+            `Idempotency-Key` уже використано з іншим тілом запиту,
+            або пасажир має активну поїздку чи непогашений борг (`DEBT`)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '422':
+          description: Quote прострочений (минуло > 5 хв) — потрібен новий `POST /trips/quote`
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /trips/{tripId}:
+    get:
+      operationId: getTrip
+      summary: Отримати стан поїздки (UC-08)
+      tags: [Trips]
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: Поточний стан поїздки
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trip' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /trips/{tripId}/cancel:
+    post:
+      operationId: cancelTrip
+      summary: Скасувати поїздку (UC-09, UC-10)
+      description: |
+        Дозволено в станах `CREATED`, `SEARCHING`, `DRIVER_ASSIGNED`, `DRIVER_ARRIVING`, `DRIVER_ARRIVED`.
+        Якщо з моменту призначення водія минуло ≥ 2 хв, нараховується штраф.
+        Щоб пасажир спершу побачив суму, клієнт надсилає `confirmPenalty: false`
+        і отримує `409` з `penaltyAmount`.
+      tags: [Trips]
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelRequest' }
+      responses:
+        '200':
+          description: Поїздку скасовано (`CANCELLED`); компенсації Saga запущено
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Trip' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            Скасування неможливе в поточному стані (`IN_PROGRESS` і далі, UC-09 A3),
+            або потрібне підтвердження штрафу (`penaltyAmount` у тілі)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token від Identity Service (CT-05, OAuth2/OIDC)
+
+  parameters:
+    TripId:
+      name: tripId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: UUID, який генерує клієнт; зберігається 24 год (NFR-16)
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Некоректний запит (валідація полів)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Відсутній або недійсний токен
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Поїздку не знайдено або вона належить іншому користувачу
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Перевищено ліміт запитів (API Gateway)
+      headers:
+        Retry-After:
+          schema: { type: integer, description: Секунди до повтору }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ServiceUnavailable:
+      description: Тимчасова недоступність залежності (наприклад, картографічного сервісу, якщо резервний провайдер теж недоступний)
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    GeoPoint:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: { type: number, format: double, minimum: -90, maximum: 90, example: 50.4501 }
+        lon: { type: number, format: double, minimum: -180, maximum: 180, example: 30.5234 }
+
+    Waypoint:
+      type: object
+      required: [point]
+      properties:
+        point: { $ref: '#/components/schemas/GeoPoint' }
+        address: { type: string, example: 'вул. Хрещатик, 22, Київ' }
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: integer, description: Сума в копійках, example: 18500 }
+        currency: { type: string, enum: [UAH] }
+
+    CarClass:
+      type: string
+      enum: [ECONOMY, COMFORT, BUSINESS, MINIVAN]
+
+    TripStatus:
+      type: string
+      description: Збігається з `TripStatus` доменної моделі (крок 3) і діаграмою станів (крок 5)
+      enum: [CREATED, SEARCHING, DRIVER_ASSIGNED, DRIVER_ARRIVING, DRIVER_ARRIVED, IN_PROGRESS,
+             COMPLETED, PAID, CANCELLED, PAYMENT_FAILED, PAYMENT_RETRY, DEBT]
+
+    QuoteRequest:
+      type: object
+      required: [pickup, dropoff, carClass]
+      properties:
+        pickup: { $ref: '#/components/schemas/Waypoint' }
+        dropoff: { $ref: '#/components/schemas/Waypoint' }
+        stops:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/Waypoint' }
+        carClass: { $ref: '#/components/schemas/CarClass' }
+        promocode: { type: string, example: RIDE10 }
+
+    Quote:
+      type: object
+      required: [quoteId, fixedPrice, surgeFactor, distanceKm, etaMinutes, expiresAt]
+      properties:
+        quoteId: { type: string, format: uuid }
+        fixedPrice: { $ref: '#/components/schemas/Money' }
+        surgeFactor: { type: number, example: 1.4, description: 'Якщо > 1.0, клієнт показує коефіцієнт явно (US-02)' }
+        discount: { $ref: '#/components/schemas/Money' }
+        distanceKm: { type: number, example: 7.3 }
+        etaMinutes: { type: integer, example: 18 }
+        pickupEtaMinutes: { type: integer, example: 4 }
+        expiresAt: { type: string, format: date-time }
+
+    CreateTripRequest:
+      type: object
+      required: [quoteId, paymentMethodId]
+      properties:
+        quoteId: { type: string, format: uuid }
+        paymentMethodId:
+          type: string
+          description: ID збереженого способу оплати (токен PSP) або `cash`
+          example: pm_9f2c
+        surgeConfirmed:
+          type: boolean
+          description: Обов'язково `true`, якщо `surgeFactor` > 1.0
+        comment: { type: string, maxLength: 200 }
+
+    DriverInfo:
+      type: object
+      properties:
+        driverId: { type: string, format: uuid }
+        name: { type: string, example: Олександр }
+        rating: { type: number, example: 4.92 }
+        car:
+          type: object
+          properties:
+            model: { type: string, example: Skoda Octavia }
+            color: { type: string, example: сірий }
+            plate: { type: string, example: AA1234BB }
+
+    Trip:
+      type: object
+      required: [tripId, status, fixedPrice, createdAt]
+      properties:
+        tripId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/TripStatus' }
+        carClass: { $ref: '#/components/schemas/CarClass' }
+        pickup: { $ref: '#/components/schemas/Waypoint' }
+        dropoff: { $ref: '#/components/schemas/Waypoint' }
+        fixedPrice: { $ref: '#/components/schemas/Money' }
+        surgeFactor: { type: number }
+        finalAmount: { $ref: '#/components/schemas/Money' }
+        paymentStatus:
+          type: string
+          description: Збігається з `PaymentStatus` (BC-05)
+          enum: [CREATED, HELD, PENDING_RETRY, DECLINED, RELEASED, CAPTURED, FAILED, REFUNDED]
+        driver: { $ref: '#/components/schemas/DriverInfo' }
+        pickupEtaMinutes: { type: integer }
+        cancelReason:
+          type: string
+          enum: [PASSENGER_CANCELLED, NO_DRIVER_FOUND, PASSENGER_NO_SHOW]
+        cancelledBy:
+          type: string
+          enum: [PASSENGER, DRIVER, SYSTEM]
+        penaltyAmount: { $ref: '#/components/schemas/Money' }
+        trackingChannel:
+          type: string
+          description: WebSocket-канал для позиції водія (UC-08)
+          example: wss://api.ridehub.ua/v1/ws/trips/6f1c2a8e-3b7d-4c55-9a51-0d7e4b2f9c10
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CancelRequest:
+      type: object
+      required: [confirmPenalty]
+      properties:
+        confirmPenalty:
+          type: boolean
+          description: '`false` — лише дізнатися штраф (відповідь 409 з `penaltyAmount`), `true` — скасувати зі штрафом'
+        reason: { type: string, maxLength: 200 }
+
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri, example: 'https://api.ridehub.ua/problems/payment-declined' }
+        title: { type: string, example: Платіж відхилено }
+        status: { type: integer, example: 402 }
+        detail: { type: string }
+        instance: { type: string }
+        traceId: { type: string, description: Наскрізний trace-id (NFR-13) }
+        penaltyAmount: { $ref: '#/components/schemas/Money' }

@@ -1,0 +1,34 @@
+@startuml 06-circuit-breaker
+!include _style.puml
+skinparam linetype polyline
+
+title RideHub — Circuit Breaker «psp» (Payment Service → PSP)
+
+state CLOSED #E2EFDA : Виклики проходять до PSP.\nКовзне вікно: останні 20 викликів.\nRetry (експоненційна затримка)\nпрацює всередині цього стану.
+state OPEN #FCE4D6 : Виклики відхиляються одразу\n(CallNotPermittedException),\nбез звернення до PSP.\nСпрацьовує fallback.
+state HALF_OPEN #FFF2CC : Пропускаються 3 пробні виклики,\nрешта відхиляються.
+
+[*] --> CLOSED
+CLOSED --> OPEN : [≥ 10 викликів у вікні]\nfailureRate ≥ 50 %\nабо slowCallRate ≥ 60 % (виклик > 1 с)
+OPEN --> HALF_OPEN : минуло 30 с\n(automaticTransition)
+HALF_OPEN --> CLOSED : з 3 пробних\nfailureRate < 50 %
+HALF_OPEN --> OPEN : з 3 пробних\nfailureRate ≥ 50 %
+
+note right of OPEN
+  **Fallback:**
+  hold → Payment.status = PENDING_RETRY,
+         поїздка продовжується (NFR-05)
+  capture → payment.failed → PAYMENT_FAILED
+            → бізнес-повтори (крок 5, T-18)
+  release / refund → черга повторів
+end note
+
+note left of CLOSED
+  **Рахується як помилка:**
+  таймаут, помилка з'єднання, HTTP 5xx, 429
+  **Не рахується:**
+  HTTP 402 / 4xx — бізнес-відмова
+  (платіж відхилено — PSP справний)
+end note
+
+@enduml

@@ -170,6 +170,16 @@ package "BC-05 Payment" #FFE699 {
     issuedAt : DateTime
     url : String
   }
+  enum PaymentStatus {
+    CREATED
+    HELD
+    PENDING_RETRY
+    DECLINED
+    RELEASED
+    CAPTURED
+    FAILED
+    REFUNDED
+  }
 }
 
 ' ---------- Узагальнення ----------
@@ -212,6 +222,7 @@ SharingCar ..> GeoPoint : <<uses>> position
 ' ---------- Enum-залежності ----------
 TaxiTrip ..> TripStatus
 CarsharingRental ..> RentalStatus
+Payment ..> PaymentStatus
 
 note bottom of Trip
   Trip — спільна абстракція поїздки і оренди.

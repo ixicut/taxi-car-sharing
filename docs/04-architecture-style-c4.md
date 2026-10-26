@@ -198,7 +198,7 @@
 | `trip.search.requested` | Trip | Matching |
 | `driver.offer.created` | Matching | Notification |
 | `driver.assigned` | Matching | Trip, Location, Notification |
-| `trip.status.changed` | Trip | Notification, Location |
+| `trip.status.changed` | Trip | Notification, Location, Matching (звільнення водія при скасуванні — компенсація Saga, крок 6) |
 | `trip.completed` | Trip | Payment, Notification |
 | `payment.captured`, `payment.failed` | Payment | Trip, Notification |
 | `rental.status.changed` | Carsharing | Notification |

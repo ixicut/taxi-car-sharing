@@ -1,0 +1,86 @@
+@startuml 06-saga-orchestration
+!include _style.puml
+skinparam sequenceMessageAlign left
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 240
+autonumber
+
+title RideHub — Оркестраційна Saga «пошук водія → підтвердження → оплата»
+
+participant "Trip Service\n**оркестратор** (CT-06)" as TS
+database "Trip DB\ntrip + saga_state + outbox" as TDB
+participant "Payment Service\n(CT-10)" as PAY
+participant "PSP" as PSP
+queue "Kafka\n(CT-13)" as K
+participant "Matching Service\n(CT-07)" as MS
+participant "Driver App\n(CT-02)" as DA
+
+== S1. Створити поїздку · компенсовна ==
+
+TS -> TDB : BEGIN\nINSERT trip (CREATED)\nINSERT saga_state (step = S1)\nCOMMIT
+
+== S2. Hold коштів · компенсовна ==
+
+TS -> PAY : gRPC Hold(tripId, fixedPrice, key)\ndeadline 5 с
+PAY -> PSP : POST /holds (CB + Retry, профіль interactive)
+PSP --> PAY : approved
+PAY --> TS : HELD
+TS -> TDB : BEGIN\ntrip = SEARCHING, saga_state.step = S2\nINSERT outbox (trip.search.requested)\nCOMMIT
+TDB -> K : outbox relay → trip.search.requested
+
+== S3–S4. Резерв водія і підтвердження · компенсовні ==
+
+K -> MS : trip.search.requested
+MS -> MS : резерв кандидата (S3),\nпропозиція на 15 с
+DA -> MS : POST /offers/{offerId}/accept (S4)
+MS -> K : driver.assigned
+K -> TS : driver.assigned
+TS -> TDB : BEGIN\ntrip = DRIVER_ASSIGNED, saga_state.step = S4\nINSERT outbox (trip.status.changed)\nCOMMIT
+
+== Pivot: поїздка почалась (T-14, IN_PROGRESS) ==
+
+note over TS, MS
+  **Точка неповернення.** Після початку поїздки послугу вже надано,
+  тому компенсацій немає: Saga може лише рухатися вперед до оплати.
+end note
+
+== S5. Capture · повторювана ==
+
+TS -> TDB : BEGIN\ntrip = COMPLETED, finalAmount\nINSERT outbox (trip.completed)\nCOMMIT
+TDB -> K : outbox relay → trip.completed
+K -> PAY : trip.completed
+PAY -> PSP : POST /holds/{holdId}/capture\n(CB + Retry, профіль background)
+
+alt Списання успішне
+  PSP --> PAY : captured
+  PAY -> K : payment.captured
+  K -> TS : payment.captured
+  TS -> TDB : trip = PAID, saga_state = DONE
+else Списання не вдалося
+  PAY -> K : payment.failed
+  K -> TS : payment.failed
+  TS -> TDB : trip = PAYMENT_FAILED → PAYMENT_RETRY\n(до 5 спроб) → PAID або DEBT
+end
+
+== C. Компенсація: пасажир скасував після S4, до pivot (T-11) ==
+
+[-> TS : POST /trips/{tripId}/cancel
+TS -> TDB : BEGIN\ntrip = CANCELLED, saga_state = COMPENSATING\nINSERT outbox (trip.status.changed: CANCELLED)\nCOMMIT
+
+group Компенсації у зворотному порядку
+  TDB -> K : outbox relay → trip.status.changed
+  K -> MS : trip.status.changed (CANCELLED)
+  MS -> MS : **C4/C3**: звільнити водія,\nанулювати пропозицію
+  note right of MS : Notification (підписаний на trip.*)\nсповіщає водія «Поїздку скасовано»
+
+  TS -> PAY : **C2**: gRPC Release(tripId)
+  PAY -> PSP : DELETE /holds/{holdId}
+  alt PSP недоступний або CB OPEN
+    PAY -> PAY : release у черзі повторів\n(профіль background, ідемпотентно)
+  end
+  PAY --> TS : RELEASED / RELEASE_SCHEDULED
+end
+
+TS -> TDB : saga_state = COMPENSATED\n(**C1**: поїздка вже CANCELLED)
+
+@enduml

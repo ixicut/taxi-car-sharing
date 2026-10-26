@@ -150,7 +150,7 @@
 
 ![Domain model](../diagrams/rendered/03-domain-model.png)
 
-Модель містить **22 класи** (сутності та один value object `GeoPoint`) і **2 перелічення** (`TripStatus`, `RentalStatus`): User, Passenger, Driver, DriverDocument, Fleet, Vehicle, TaxiCar, SharingCar, Trip, TaxiTrip, CarsharingRental, Route, Waypoint, Rating, Shift, GeoPoint, Tariff, SurgeMultiplier, Promocode, Payment, PaymentMethod, Receipt. Кожна сутність розкладена на діаграмі по bounded contexts (колір пакета = контекст).
+Модель містить **22 класи** (сутності та один value object `GeoPoint`) і **3 перелічення** (`TripStatus`, `RentalStatus`, `PaymentStatus`): User, Passenger, Driver, DriverDocument, Fleet, Vehicle, TaxiCar, SharingCar, Trip, TaxiTrip, CarsharingRental, Route, Waypoint, Rating, Shift, GeoPoint, Tariff, SurgeMultiplier, Promocode, Payment, PaymentMethod, Receipt. Кожна сутність розкладена на діаграмі по bounded contexts (колір пакета = контекст).
 
 ### Узагальнення (generalization)
 
@@ -206,6 +206,7 @@
 
 - `TaxiTrip.status: TripStatus` — 12 значень: `CREATED`, `SEARCHING`, `DRIVER_ASSIGNED`, `DRIVER_ARRIVING`, `DRIVER_ARRIVED`, `IN_PROGRESS`, `COMPLETED`, `PAID`, `CANCELLED`, `PAYMENT_FAILED`, `PAYMENT_RETRY`, `DEBT`.
 - `CarsharingRental.status: RentalStatus` — 5 значень: `RESERVED`, `UNLOCKED`, `IN_RENT`, `PARKED`, `FINISHED`.
+- `Payment.status: PaymentStatus` — 8 значень: `CREATED`, `HELD`, `PENDING_RETRY`, `DECLINED`, `RELEASED`, `CAPTURED`, `FAILED`, `REFUNDED` (додано на кроці 6, див. [6.3](06-distributed-integration.md#статуси-платежу)).
 
 Це **єдиний словник станів** для всіх наступних розділів: діаграма станів (крок 5), Saga (крок 6) і fallback Circuit Breaker. Назви в них мають збігатися літера в літеру.
 
