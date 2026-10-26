@@ -24,7 +24,7 @@ package "TB-3: Внутрішня мережа RideHub" #E2EFDA {
 
 EE1 --> P31 : DF-3.1 позиції раз на 3 с\n(WSS, JWT)
 P31 --> P32 : DF-3.2 потік (WebSocket)
-P32 --> DS31 : DF-3.3 GEOADD, TTL
+P32 --> DS31 : DF-3.3 GEOADD +\nheartbeat-ключ (TTL 60 с)
 P32 --> DS32 : DF-3.4 публікація подій
 P32 --> P31 : DF-3.5 позиція призначеного водія
 P31 --> EE2 : DF-3.6 позиція (WSS)

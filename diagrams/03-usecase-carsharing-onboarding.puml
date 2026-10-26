@@ -1,0 +1,77 @@
+@startuml 03-usecase-carsharing-onboarding
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 40
+skinparam ranksep 60
+
+title RideHub — Use case: каршеринг та підключення водіїв і партнерів
+
+left to right direction
+
+' ---------- Первинні актори ----------
+actor "Користувач\nкаршерингу\n(ST-02)" as Renter
+actor "Водій\n(ST-03)" as Driver
+actor "Таксопарк-партнер\n(ST-04)" as Partner
+
+' ---------- Вторинні актори (зовнішні системи) ----------
+actor "Телематика\nоператора (ST-05)" as Telematics <<system>>
+actor "KYC «Дія»\n(ST-13)" as KYC <<system>>
+actor "Платіжний провайдер\n(ST-07)" as PSP <<system>>
+
+rectangle "RideHub" {
+  usecase "UC-15\nЗнайти вільне авто" as UC15 #FCE4D6
+  usecase "UC-16\nЗабронювати авто" as UC16 #FCE4D6
+  usecase "UC-17\nВідкрити / закрити авто" as UC17 #FCE4D6
+  usecase "UC-18\nЗавершити оренду" as UC18 #FCE4D6
+  usecase "UC-19\nПройти онбординг водія" as UC19 #E2EFDA
+  usecase "UC-20\nПідключити водіїв\nі авто таксопарку" as UC20 #E2EFDA
+
+  usecase "UC-02\nРозрахувати вартість" as UC02 #F2F2F2
+  usecase "UC-11\nОплатити поїздку" as UC11 #F2F2F2
+  usecase "UC-12\nЗаблокувати кошти (hold)" as UC12 #F2F2F2
+  usecase "UC-13\nАвторизувати платіж" as UC13 #F2F2F2
+}
+
+' ---------- Асоціації акторів ----------
+Renter --> UC15
+Renter --> UC16
+Renter --> UC17
+Renter --> UC18
+
+Driver --> UC19
+Partner --> UC20
+
+UC17 --> Telematics
+UC19 --> KYC
+UC13 --> PSP
+
+' ---------- include ----------
+UC16 ..> UC12 : <<include>>
+UC18 ..> UC17 : <<include>>
+UC18 ..> UC02 : <<include>>
+UC18 ..> UC11 : <<include>>
+UC11 ..> UC13 : <<include>>
+UC12 ..> UC13 : <<include>>
+
+note right of UC16
+  Передумова: користувач пройшов
+  перевірку посвідчення водія
+  (той самий KYC-процес, що й UC-19).
+  Каршеринг — лише безготівково,
+  тому hold обов'язковий (include).
+end note
+
+note right of UC20
+  Запрошені водії
+  проходять UC-19.
+end note
+
+legend right
+  |= Колір |= Значення |
+  |<#FCE4D6>| Каршеринг (BC-07) |
+  |<#E2EFDA>| Онбординг і партнери (BC-06, BC-07) |
+  |<#F2F2F2>| UC з діаграми 03-usecase (повторне використання) |
+  |<<system>>| Зовнішня система |
+endlegend
+
+@enduml

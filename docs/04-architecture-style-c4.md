@@ -211,4 +211,4 @@
 
 - Усі 8 компонентів кроку 3 мають по одному контейнеру; клієнтські застосунки, Gateway і брокер — додаткові.
 - Усі інтеграції з зовнішніми системами, що розглядаються в кроці 6, є стрілками на діаграмі: Trip → Maps (sync REST), Trip → Pricing (sync gRPC), Payment → PSP (sync REST + CB + Retry), PSP → Payment (webhook), Location → Kafka (async), Trip → Kafka → Payment/Notification.
-- Рішення кроку (стиль, моноліт чи сервіси, сховища) буде зафіксовано в **ADR-001**, **ADR-003** (Kafka), **ADR-004** (Redis GEO + WebSocket) на кроці 7.
+- Рішення кроку зафіксовано в журналі ADR: [ADR-001](07-adr/ADR-001-microservices-event-driven.md) (стиль), [ADR-003](07-adr/ADR-003-kafka-event-broker.md) (Kafka), [ADR-004](07-adr/ADR-004-geolocation-redis-websocket.md) (Redis GEO + WebSocket), [ADR-008](07-adr/ADR-008-api-gateway.md) (API Gateway), [ADR-009](07-adr/ADR-009-database-per-service.md) (сховища).

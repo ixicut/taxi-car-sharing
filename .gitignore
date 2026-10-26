@@ -3,3 +3,6 @@
 # OS
 Thumbs.db
 .DS_Store
+
+# Локальний рушій PlantUML для scripts/render-diagrams
+scripts/plantuml.jar

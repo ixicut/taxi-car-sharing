@@ -1,5 +1,7 @@
 @startuml 08-class-after
 !include _style.puml
+' queue (Kafka) у діаграмі класів потребує allowmixing
+allowmixing
 skinparam linetype polyline
 skinparam nodesep 35
 skinparam ranksep 55
