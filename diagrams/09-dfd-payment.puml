@@ -1,0 +1,46 @@
+@startuml 09-dfd-payment
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 50
+skinparam ranksep 70
+
+title DFD 2 — Обробка платежу (Trip → Payment → PSP, webhook)
+
+package "TB-1: Пристрій пасажира (недовірений)" #FDF2F0 {
+  actor "EE-1 Пасажир\n+ Passenger App" as EE1
+}
+
+package "TB-2: Периметр (DMZ)" #FFF2CC {
+  rectangle "P-2.1\nAPI Gateway (Kong)" as P21
+  rectangle "P-2.4\nEndpoint webhook-ів\n(Payment Service)" as P24
+}
+
+package "TB-3: Внутрішня мережа RideHub" #E2EFDA {
+  rectangle "P-2.2\nTrip Service\n(оркестратор Saga)" as P22
+  rectangle "P-2.3\nPayment Service\nCB + Retry, Outbox" as P23
+  database "DS-2.1\nPayment DB\nплатежі, баланси, outbox" as DS21
+  queue "DS-2.2\nKafka\npayment.*, trip.*" as DS22
+  database "DS-2.3\nAudit Log\n(append-only)" as DS23
+}
+
+package "TB-4: Платіжний провайдер (зовнішній)" #EDEDED {
+  rectangle "EE-2\nPSP\n(LiqPay / WayForPay)" as EE2
+}
+
+EE1 --> EE2 : DF-2.1 дані картки напряму в PSP\n(hosted fields) → токен
+EE1 --> P21 : DF-2.2 POST /trips\n(quoteId, токен, Idempotency-Key)
+P21 --> P22 : DF-2.3 запит + JWT
+P22 --> P23 : DF-2.4 hold / release (gRPC),\nсума з серверної Saga
+P23 --> EE2 : DF-2.5 hold / capture / refund\n(HTTPS, ключ API, Idempotency-Key)
+EE2 --> P24 : DF-2.6 webhook результату\n(HTTPS, HMAC)
+P24 --> P23 : DF-2.7 перевірений webhook
+P23 <--> DS21 : DF-2.8 платежі, outbox
+P23 --> DS22 : DF-2.9 payment.captured / failed
+P23 --> DS23 : DF-2.10 фінансові операції
+
+note bottom of P23
+  Дані картки (PAN) у RideHub не потрапляють:
+  лише токен PSP та last4 (PCI DSS SAQ A).
+end note
+
+@enduml

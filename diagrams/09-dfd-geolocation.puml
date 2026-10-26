@@ -1,0 +1,39 @@
+@startuml 09-dfd-geolocation
+!include _style.puml
+skinparam linetype polyline
+skinparam nodesep 50
+skinparam ranksep 70
+
+title DFD 3 — Потік геолокації (Driver App → Location Service → пасажир)
+
+package "TB-1: Пристрої (недовірені)" #FDF2F0 {
+  actor "EE-1 Водій\n+ Driver App\n(джерело GPS)" as EE1
+  actor "EE-2 Пасажир\n+ Passenger App" as EE2
+}
+
+package "TB-2: Периметр (DMZ)" #FFF2CC {
+  rectangle "P-3.1\nAPI Gateway\n(проксі WebSocket)" as P31
+}
+
+package "TB-3: Внутрішня мережа RideHub" #E2EFDA {
+  rectangle "P-3.2\nLocation Service" as P32
+  database "DS-3.1\nRedis GEO\nпоточні позиції" as DS31
+  queue "DS-3.2\nKafka\ndriver.location.updated" as DS32
+  rectangle "P-3.3\nMatching Service" as P33
+}
+
+EE1 --> P31 : DF-3.1 позиції раз на 3 с\n(WSS, JWT)
+P31 --> P32 : DF-3.2 потік (WebSocket)
+P32 --> DS31 : DF-3.3 GEOADD, TTL
+P32 --> DS32 : DF-3.4 публікація подій
+P32 --> P31 : DF-3.5 позиція призначеного водія
+P31 --> EE2 : DF-3.6 позиція (WSS)
+P33 --> P32 : DF-3.7 nearbyDrivers (gRPC)
+
+note bottom of P32
+  GPS-спуфінг: координати походять з недовіреного
+  пристрою (TB-1), тому проходять перевірку
+  правдоподібності в Location Service.
+end note
+
+@enduml

@@ -274,7 +274,7 @@ resilience4j:
 
 ### Спостереження
 
-Стан CB і лічильники повторів експортуються в метрики (`resilience4j_circuitbreaker_state`, `resilience4j_retry_calls`). Перехід CB у `OPEN` — алерт для чергового SRE (NFR-13, MTTD ≤ 5 хв). Як автоматично перевіряти, що fallback справді працює, описано у fitness function FF-4 (chaos-тест із вимкненим PSP, крок 9).
+Стан CB і лічильники повторів експортуються в метрики (`resilience4j_circuitbreaker_state`, `resilience4j_retry_calls`). Перехід CB у `OPEN` — алерт для чергового SRE (NFR-13, MTTD ≤ 5 хв). Як автоматично перевіряти, що fallback справді працює, описано у fitness function FF-04 (chaos-тест із вимкненим PSP, крок 9).
 
 ## 6.5. Узгодженість з іншими розділами
 

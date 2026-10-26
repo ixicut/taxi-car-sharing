@@ -4,12 +4,12 @@
 
 | ASR | Джерело (US / NFR) | Стейкхолдери | UC | Компоненти / контейнери | Діаграми | ADR | STRIDE | FF |
 |---|---|---|---|---|---|---|---|---|
-| ASR-01 Геолокація в реальному часі | NFR-01, NFR-03, US-04, US-15 | ST-01, ST-02, ST-03 | UC-05, UC-08 | LocationService, MatchingService | 03-usecase, 03-domain-model, 03-components, 05-seq-order-trip (фаза 4), 05-activity-trip-process | ADR-001, ADR-003, ADR-004 | | |
-| ASR-02 Пікові навантаження | NFR-03, NFR-02 | ST-01, ST-03, ST-09 | UC-01, UC-02, UC-05 | TripService, PricingService, MatchingService, LocationService | 03-components | ADR-001, ADR-003, ADR-008, ADR-009 | | |
-| ASR-03 Доступність і стійкість | NFR-04, NFR-05, NFR-16 | ST-01, ST-03, ST-09 | UC-01 (A4, A7), UC-09 (A2), UC-11 | TripService, PaymentService, NotificationService | 03-usecase, 03-components, 05-seq-order-trip (PSP недоступний), 05-state-trip (PAYMENT_RETRY), 06-circuit-breaker | ADR-001, ADR-002, ADR-005, ADR-007 | | |
-| ASR-04 Узгодженість «замовлення → оплата» | NFR-07, US-03, US-05, US-06, US-16 | ST-01, ST-03, ST-07, ST-09 | UC-01, UC-09, UC-10, UC-11, UC-12, UC-13, UC-14 | TripService, PaymentService, MatchingService | 03-usecase, 03-domain-model (`TripStatus`), 03-components, 05-seq-order-trip, 05-state-trip, 06-saga-orchestration, api/trip-api.yaml | ADR-002, ADR-003, ADR-009 | | |
-| ASR-05 Безпека водія і платежів | NFR-08, NFR-09, NFR-10, US-14, US-06 | ST-01, ST-03, ST-07, ST-10, ST-12 | UC-06, UC-13 | IdentityService, PaymentService | 03-components | ADR-006, ADR-008, ADR-009 | | |
-| ASR-06 Розширюваність партнерами | NFR-11, NFR-12, US-22, US-10 | ST-04, ST-05, ST-09 | UC-02 (тариф без релізу) | CarsharingService, PricingService | 03-domain-model (`Fleet`), 03-components | ADR-001, ADR-007, ADR-009 | | |
+| ASR-01 Геолокація в реальному часі | NFR-01, NFR-03, US-04, US-15 | ST-01, ST-02, ST-03 | UC-05, UC-08 | LocationService, MatchingService | 03-usecase, 03-domain-model, 03-components, 05-seq-order-trip (фаза 4), 05-activity-trip-process | ADR-001, ADR-003, ADR-004 | TH-15…TH-20 | FF-01 |
+| ASR-02 Пікові навантаження | NFR-03, NFR-02 | ST-01, ST-03, ST-09 | UC-01, UC-02, UC-05 | TripService, PricingService, MatchingService, LocationService | 03-components | ADR-001, ADR-003, ADR-008, ADR-009 | TH-13, TH-19 | FF-02, FF-03 |
+| ASR-03 Доступність і стійкість | NFR-04, NFR-05, NFR-16 | ST-01, ST-03, ST-09 | UC-01 (A4, A7), UC-09 (A2), UC-11 | TripService, PaymentService, NotificationService | 03-usecase, 03-components, 05-seq-order-trip (PSP недоступний), 05-state-trip (PAYMENT_RETRY), 06-circuit-breaker | ADR-001, ADR-002, ADR-005, ADR-007 | TH-13 | FF-04 |
+| ASR-04 Узгодженість «замовлення → оплата» | NFR-07, US-03, US-05, US-06, US-16 | ST-01, ST-03, ST-07, ST-09 | UC-01, UC-09, UC-10, UC-11, UC-12, UC-13, UC-14 | TripService, PaymentService, MatchingService | 03-usecase, 03-domain-model (`TripStatus`), 03-components, 05-seq-order-trip, 05-state-trip, 06-saga-orchestration, api/trip-api.yaml | ADR-002, ADR-003, ADR-009 | TH-08…TH-11 | FF-05 |
+| ASR-05 Безпека водія і платежів | NFR-08, NFR-09, NFR-10, US-14, US-06 | ST-01, ST-03, ST-07, ST-10, ST-12 | UC-06, UC-13 | IdentityService, PaymentService | 03-components | ADR-006, ADR-008, ADR-009 | TH-01…TH-08, TH-12, TH-14, TH-16, TH-18, TH-20 | FF-06, FF-07 |
+| ASR-06 Розширюваність партнерами | NFR-11, NFR-12, US-22, US-10 | ST-04, ST-05, ST-09 | UC-02 (тариф без релізу) | CarsharingService, PricingService | 03-domain-model (`Fleet`), 03-components | ADR-001, ADR-007, ADR-009 | TH-03, TH-08 (відповіді зовнішніх систем) | FF-03 |
 
 ## Покриття user stories
 
@@ -123,3 +123,23 @@
 | God Object керує процесом | Оркестратор Saga + `TripStateMachine` | ASR-04 | ADR-002 | 08-class-after, 06-saga-orchestration |
 | Спільна БД легасі | Database-per-service, поетапна передача володіння | ASR-02, NFR-12 | ADR-009 | 08-strangler-fig |
 | Міграція без «великого вибуху» | Strangler Fig (E1…E7) | ASR-01, ASR-02, ASR-04 | ADR-001, ADR-008 | 08-strangler-fig |
+
+## Загрози і fitness functions
+
+Заповнено на кроці 9 ([09-stride-fitness.md](09-stride-fitness.md)).
+
+| Точка | Загрози | ASR | Контрзаходи (ADR) | Fitness functions |
+|---|---|---|---|---|
+| Автентифікація водія | TH-01…TH-07 | ASR-05 | ADR-006, ADR-008 | FF-06, FF-07 |
+| Обробка платежу | TH-08…TH-14 | ASR-04, ASR-05, ASR-03 | ADR-002, ADR-005, ADR-008 | FF-05, FF-06, FF-04 |
+| Потік геолокації | TH-15…TH-20 | ASR-01, ASR-02 | ADR-004, ADR-008 | FF-01, FF-02, FF-03, FF-07 |
+
+| FF | Що перевіряє | ASR | Захищає рішення |
+|---|---|---|---|
+| FF-01 | Затримка геопозиції ≤ 2 с | ASR-01 | ADR-004 |
+| FF-02 | 10× пік | ASR-02 | ADR-001, ADR-003 |
+| FF-03 | Відповідність архітектурі | ASR-06, ASR-02 | ADR-007, ADR-009 |
+| FF-04 | Chaos: відмова PSP / Maps | ASR-03 | ADR-005 |
+| FF-05 | Узгодженість, ідемпотентність | ASR-04 | ADR-002 |
+| FF-06 | SAST/DAST, залежності, відсутність PAN | ASR-05 | ADR-006, NFR-09 |
+| FF-07 | Негативні сценарії автентифікації | ASR-05 | ADR-006 |
