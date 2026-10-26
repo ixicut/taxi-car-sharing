@@ -4,12 +4,12 @@
 
 | ASR | Джерело (US / NFR) | Стейкхолдери | UC | Компоненти / контейнери | Діаграми | ADR | STRIDE | FF |
 |---|---|---|---|---|---|---|---|---|
-| ASR-01 Геолокація в реальному часі | NFR-01, NFR-03, US-04, US-15 | ST-01, ST-02, ST-03 | UC-05, UC-08 | LocationService, MatchingService | 03-usecase, 03-domain-model, 03-components, 05-seq-order-trip (фаза 4), 05-activity-trip-process | | | |
-| ASR-02 Пікові навантаження | NFR-03, NFR-02 | ST-01, ST-03, ST-09 | UC-01, UC-02, UC-05 | TripService, PricingService, MatchingService, LocationService | 03-components | | | |
-| ASR-03 Доступність і стійкість | NFR-04, NFR-05, NFR-16 | ST-01, ST-03, ST-09 | UC-01 (A4, A7), UC-09 (A2), UC-11 | TripService, PaymentService, NotificationService | 03-usecase, 03-components, 05-seq-order-trip (PSP недоступний), 05-state-trip (PAYMENT_RETRY), 06-circuit-breaker | | | |
-| ASR-04 Узгодженість «замовлення → оплата» | NFR-07, US-03, US-05, US-06, US-16 | ST-01, ST-03, ST-07, ST-09 | UC-01, UC-09, UC-10, UC-11, UC-12, UC-13, UC-14 | TripService, PaymentService, MatchingService | 03-usecase, 03-domain-model (`TripStatus`), 03-components, 05-seq-order-trip, 05-state-trip, 06-saga-orchestration, api/trip-api.yaml | | | |
-| ASR-05 Безпека водія і платежів | NFR-08, NFR-09, NFR-10, US-14, US-06 | ST-01, ST-03, ST-07, ST-10, ST-12 | UC-06, UC-13 | IdentityService, PaymentService | 03-components | | | |
-| ASR-06 Розширюваність партнерами | NFR-11, NFR-12, US-22, US-10 | ST-04, ST-05, ST-09 | UC-02 (тариф без релізу) | CarsharingService, PricingService | 03-domain-model (`Fleet`), 03-components | | | |
+| ASR-01 Геолокація в реальному часі | NFR-01, NFR-03, US-04, US-15 | ST-01, ST-02, ST-03 | UC-05, UC-08 | LocationService, MatchingService | 03-usecase, 03-domain-model, 03-components, 05-seq-order-trip (фаза 4), 05-activity-trip-process | ADR-001, ADR-003, ADR-004 | | |
+| ASR-02 Пікові навантаження | NFR-03, NFR-02 | ST-01, ST-03, ST-09 | UC-01, UC-02, UC-05 | TripService, PricingService, MatchingService, LocationService | 03-components | ADR-001, ADR-003, ADR-008, ADR-009 | | |
+| ASR-03 Доступність і стійкість | NFR-04, NFR-05, NFR-16 | ST-01, ST-03, ST-09 | UC-01 (A4, A7), UC-09 (A2), UC-11 | TripService, PaymentService, NotificationService | 03-usecase, 03-components, 05-seq-order-trip (PSP недоступний), 05-state-trip (PAYMENT_RETRY), 06-circuit-breaker | ADR-001, ADR-002, ADR-005, ADR-007 | | |
+| ASR-04 Узгодженість «замовлення → оплата» | NFR-07, US-03, US-05, US-06, US-16 | ST-01, ST-03, ST-07, ST-09 | UC-01, UC-09, UC-10, UC-11, UC-12, UC-13, UC-14 | TripService, PaymentService, MatchingService | 03-usecase, 03-domain-model (`TripStatus`), 03-components, 05-seq-order-trip, 05-state-trip, 06-saga-orchestration, api/trip-api.yaml | ADR-002, ADR-003, ADR-009 | | |
+| ASR-05 Безпека водія і платежів | NFR-08, NFR-09, NFR-10, US-14, US-06 | ST-01, ST-03, ST-07, ST-10, ST-12 | UC-06, UC-13 | IdentityService, PaymentService | 03-components | ADR-006, ADR-008, ADR-009 | | |
+| ASR-06 Розширюваність партнерами | NFR-11, NFR-12, US-22, US-10 | ST-04, ST-05, ST-09 | UC-02 (тариф без релізу) | CarsharingService, PricingService | 03-domain-model (`Fleet`), 03-components | ADR-001, ADR-007, ADR-009 | | |
 
 ## Покриття user stories
 
@@ -92,3 +92,19 @@
 | ASR-04 | INT-03, INT-06, INT-07, INT-08 | Оркестраційна Saga (S1–S5, C1–C4), Transactional Outbox, ідемпотентні споживачі, `Idempotency-Key`, звірка з PSP | 06-saga-orchestration, api/trip-api.yaml |
 | ASR-05 | INT-08 (webhook з HMAC) | JWT на Gateway, перевірка власника поїздки, підпис webhook-ів | api/trip-api.yaml |
 | ASR-06 | — | Стабільний внутрішній контракт (OpenAPI, `.proto`), версіонування `/v1` | api/trip-api.yaml |
+
+## ADR → ASR → діаграми
+
+Заповнено на кроці 7. Реєстр — [07-adr/index.md](07-adr/index.md).
+
+| ADR | Рішення | ASR | Де видно рішення |
+|---|---|---|---|
+| ADR-001 | Мікросервіси + event-driven | ASR-01, 02, 03, 06 | 04-c4-container, розділ 4.1 |
+| ADR-002 | Eventual consistency, Saga, Outbox | ASR-04, 03 | 06-saga-orchestration, 05-state-trip, 05-seq-order-trip |
+| ADR-003 | Kafka | ASR-01, 02, 04 | 04-c4-container (CT-13), топіки в 4.4 |
+| ADR-004 | Redis GEO + WebSocket | ASR-01, 02 | 04-c4-container (CT-08), 05-seq-order-trip (фаза 4) |
+| ADR-005 | CB + Retry для PSP | ASR-03, 04 | 06-circuit-breaker, 05-seq-order-trip (PSP недоступний) |
+| ADR-006 | OAuth2/OIDC + пристрій + MFA | ASR-05 | 04-c4-container (CT-05) |
+| ADR-007 | Adapter для партнерів | ASR-06, 03 | 03-components (зовнішні інтерфейси), 04-c4-container |
+| ADR-008 | API Gateway | ASR-02, 05 | 04-c4-container (CT-04) |
+| ADR-009 | Database-per-service | ASR-02, 05, 06 | 04-c4-container (сховища), 03-domain-model (BC) |
